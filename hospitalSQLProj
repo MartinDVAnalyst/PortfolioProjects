@@ -1,0 +1,140 @@
+SELECT * FROM patient.health;
+
+-- Query for making Histogram
+USE patient;
+SELECT ROUND(time_in_hospital, 1) AS bucket,
+COUNT(*) AS count,
+RPAD('', COUNT(*)/100, '*') AS bar
+FROM patient.health
+GROUP BY bucket
+ORDER BY bucket;
+
+-- data explorations
+-- examining medical specialties
+SELECT DISTINCT(medical_specialty)
+FROM patient.health
+ORDER BY medical_specialty;
+
+-- avg number of procedures by specialty
+SELECT DISTINCT(medical_specialty), AVG(num_procedures) AS avg_procedures
+FROM patient.health
+GROUP BY medical_specialty
+ORDER BY avg_procedures DESC;
+
+-- rounding the numbers
+SELECT DISTINCT(medical_specialty), ROUND(AVG(num_procedures),1) AS avg_procedures
+FROM patient.health
+GROUP BY medical_specialty
+ORDER BY avg_procedures DESC;
+
+-- some are perfect numbers. Might mean there are very vew procedures. Should count it
+SELECT DISTINCT(medical_specialty), ROUND(AVG(num_procedures),1) AS avg_procedures, COUNT(*) AS count
+FROM patient.health
+GROUP BY medical_specialty
+ORDER BY avg_procedures DESC;
+
+-- grab ones with more than 50 
+SELECT DISTINCT(medical_specialty), ROUND(AVG(num_procedures),1) AS avg_procedures, COUNT(*) AS count
+FROM patient.health
+GROUP BY medical_specialty
+HAVING count > 50
+ORDER BY avg_procedures DESC;
+
+-- Medical specialties with avg procedures > 2.5 
+SELECT DISTINCT(medical_specialty), ROUND(AVG(num_procedures),1) AS avg_procedures, COUNT(*) AS count
+FROM patient.health
+GROUP BY medical_specialty
+HAVING count > 50 AND avg_procedures > 2.5
+ORDER BY avg_procedures DESC;
+
+
+-- working with Chief of Nursing
+-- is there any difference when it comes to race
+SELECT *
+FROM patient.health
+JOIN demographics ON health.patient_nbr = demographics.patient_nbr;
+
+SELECT race, ROUND(AVG(num_lab_procedures),1) AS avg_lab_procedures
+FROM patient.health
+JOIN patient.demographics ON health.patient_nbr = demographics.patient_nbr
+GROUP BY race
+ORDER BY avg_lab_procedures DESC;
+
+-- Do those who get a lot of lab procedures, stay longer?
+-- what kind of buckets can I put them 
+SELECT MIN(num_lab_procedures), AVG(num_lab_procedures), MAX(num_lab_procedures)
+FROM patient.health;
+
+-- making buckets according to those results
+SELECT num_lab_procedures,
+CASE
+WHEN num_lab_procedures >= 0 AND num_lab_procedures < 25 THEN "few"
+WHEN num_lab_procedures >= 25 AND num_lab_procedures < 55 THEN "average"
+ELSE "many"
+END AS procedure_frequency
+FROM patient.health;
+
+-- need to evaluate how groups affect length of stay
+SELECT AVG(time_in_hospital) AS avg_length_of_stay,
+CASE
+WHEN num_lab_procedures >= 0 AND num_lab_procedures < 25 THEN "few"
+WHEN num_lab_procedures >= 25 AND num_lab_procedures < 55 THEN "average"
+ELSE "many"
+END AS procedure_frequency
+FROM patient.health
+GROUP BY procedure_frequency
+ORDER BY avg_length_of_stay DESC;
+
+
+-- Got an email from a co-worker in research. They want a test where anywho
+-- who is african american or had an "up" for metformin. They need a list of patient id's
+SELECT patient_nbr 
+FROM patient.demographics 
+WHERE race = 'African American'
+UNION
+SELECT patient_nbr 
+FROM patient.health 
+WHERE metformin = 'Up';
+
+-- Hospital wants to highlight biggest success stories where patients came to hospital
+-- with an emergency (admission type 1), but stayed less than avg time
+SELECT * 
+FROM patient.health
+WHERE admission_type_id = 1 AND time_in_hospital < 
+(SELECT AVG(time_in_hospital) FROM health);
+
+-- same thing with a cte
+WITH avg_time AS (SELECT AVG(time_in_hospital) FROM health)
+SELECT * FROM patient.health
+WHERE admission_type_id = 1
+AND time_in_hospital < (SELECT * FROM avg_time);
+
+-- received q about a summary for top 50 medication patients
+SELECT CONCAT('Patient ', health.patient_nbr, ' was ', demographics.race, ' and ',
+(CASE WHEN readmitted = 'NO' THEN ' was not readmitted. They had '
+ELSE ' was readmitted. They had '
+END),
+num_medications, ' medications and ', num_lab_procedures, ' lab procedures.'
+) AS summary 
+FROM patient.health
+INNER JOIN patient.demographics ON demographics.patient_nbr = health.patient_nbr
+ORDER BY num_medications DESC, num_lab_procedures DESC
+LIMIT 50;
+
+
+-- Additional questions I want to explore
+-- differences in length of stay between different age groups
+
+SELECT DISTINCT(readmitted), COUNT(DISTINCT(patient_nbr)) AS num_patients, AVG(time_in_hospital) AS avg_time
+FROM patient.health
+GROUP BY readmitted;
+
+-- Is there a correlation between the number of medications a patient is taking and their length of stay
+SELECT num_medications, AVG(time_in_hospital) AS avg_length_of_stay
+FROM patient.health
+GROUP BY num_medications
+ORDER BY num_medications;
+
+SELECT DISTINCT(num_medications), COUNT(DISTINCT(patient_nbr)) AS num_patients, AVG(time_in_hospital) AS avg_time
+FROM patient.health
+GROUP BY readmitted;
